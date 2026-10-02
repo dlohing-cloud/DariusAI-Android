@@ -7,16 +7,26 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.inputmethod.EditorInfo
 import android.widget.*
+import android.content.Intent
+import android.net.Uri
+import android.speech.RecognizerIntent
+import java.util.Locale
 import android.graphics.drawable.GradientDrawable
 
 class MainActivity : Activity() {
     private lateinit var chat: LinearLayout
     private lateinit var input: EditText
     private var workspace = "General"
+    private val attachedFiles = mutableListOf<String>()
 
     private val blue = Color.rgb(21, 101, 192)
     private val lightBlue = Color.rgb(232, 240, 254)
     private val textDark = Color.rgb(32, 40, 50)
+
+    companion object {
+        private const val PICK_FILES = 1001
+        private const val SPEECH_INPUT = 1002
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -107,7 +117,22 @@ class MainActivity : Activity() {
                 if (actionId == EditorInfo.IME_ACTION_SEND) { sendMessage(); true } else false
             }
         }
+        composer.addView(Button(this).apply {
+            text = "+"
+            textSize = 22f
+            setTextColor(blue)
+            contentDescription = "Attach files"
+            setOnClickListener { openFilePicker() }
+        }, LinearLayout.LayoutParams(52, -2))
+
         composer.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
+
+        composer.addView(Button(this).apply {
+            text = "🎙"
+            textSize = 18f
+            contentDescription = "Voice input"
+            setOnClickListener { startVoiceInput() }
+        }, LinearLayout.LayoutParams(52, -2))
 
         composer.addView(Button(this).apply {
             text = "Send"
@@ -119,6 +144,59 @@ class MainActivity : Activity() {
 
         root.addView(composer)
         setContentView(root)
+    }
+
+    private fun openFilePicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                "image/*", "application/pdf", "text/plain", "text/markdown",
+                "text/csv", "application/json", "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ))
+        }
+        startActivityForResult(intent, PICK_FILES)
+    }
+
+    private fun startVoiceInput() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Darius AI")
+        }
+        try {
+            startActivityForResult(intent, SPEECH_INPUT)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Voice input is not available on this phone.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK || data == null) return
+        if (requestCode == PICK_FILES) {
+            val uris = mutableListOf<Uri>()
+            data.clipData?.let { clip ->
+                for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+            } ?: data.data?.let { uris.add(it) }
+            uris.forEach { uri ->
+                try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+                attachedFiles.add(uri.toString())
+                addMessage("Attachment", "Added: " + (uri.lastPathSegment ?: "Selected file"))
+            }
+            if (uris.isNotEmpty()) Toast.makeText(this, uris.size.toString() + " file(s) attached", Toast.LENGTH_SHORT).show()
+        } else if (requestCode == SPEECH_INPUT) {
+            val results = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            if (!results.isNullOrEmpty()) {
+                input.setText(results[0])
+                input.setSelection(input.text.length)
+            }
+        }
     }
 
     private fun addQuickActions() {
@@ -141,7 +219,7 @@ class MainActivity : Activity() {
 
     private fun sendMessage() {
         val message = input.text.toString().trim()
-        if (message.isEmpty()) return
+        if (message.isEmpty() && attachedFiles.isEmpty())
         addMessage("You", message)
         addMessage("Darius AI", "I received your request in the $workspace workspace. The next backend connection will let me generate the full response here.")
         input.text.clear()
@@ -149,6 +227,7 @@ class MainActivity : Activity() {
 
     private fun startNewChat() {
         chat.removeAllViews()
+        attachedFiles.clear()
         addMessage("Darius AI", "New chat started. What would you like to work on?")
         addQuickActions()
         input.requestFocus()
