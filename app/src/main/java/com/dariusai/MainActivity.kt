@@ -12,12 +12,17 @@ import android.net.Uri
 import android.speech.RecognizerIntent
 import java.util.Locale
 import android.graphics.drawable.GradientDrawable
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
     private lateinit var chat: LinearLayout
     private lateinit var input: EditText
     private var workspace = "General"
     private val attachedFiles = mutableListOf<String>()
+    private var sending = false
 
     private val blue = Color.rgb(36, 99, 235)
     private val navy = Color.rgb(18, 31, 53)
@@ -27,6 +32,7 @@ class MainActivity : Activity() {
     companion object {
         private const val PICK_FILES = 1001
         private const val SPEECH_INPUT = 1002
+        private const val BACKEND_URL = "https://darius-ai.vercel.app/api/chat"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,7 +68,6 @@ class MainActivity : Activity() {
 
         val workspaceLabel = TextView(this).apply {
             text = "  GENERAL"
-            tag = "workspaceLabel"
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(blue)
@@ -118,6 +123,7 @@ class MainActivity : Activity() {
                 if (actionId == EditorInfo.IME_ACTION_SEND) { sendMessage(); true } else false
             }
         }
+
         composer.addView(Button(this).apply {
             text = "+"
             textSize = 22f
@@ -139,7 +145,7 @@ class MainActivity : Activity() {
             text = "➤"
             textSize = 21f
             setTextColor(Color.WHITE)
-            setBackgroundColor(blue)
+            background = rounded(blue, 24f)
             setOnClickListener { sendMessage() }
         }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(8, 0, 0, 0) })
 
@@ -219,23 +225,72 @@ class MainActivity : Activity() {
     }
 
     private fun sendMessage() {
+        if (sending) return
         val message = input.text.toString().trim()
         if (message.isEmpty() && attachedFiles.isEmpty()) {
             Toast.makeText(this, "Type a message or attach a file.", Toast.LENGTH_SHORT).show()
             return
         }
+
         val userText = if (message.isEmpty()) "Please analyse the attached file(s)." else message
         addMessage("You", userText)
-        addMessage("Darius AI", "Request received in the " + workspace + " workspace. The secure AI backend will generate the full response here.")
         input.text.clear()
+        attachedFiles.clear()
+        sending = true
+        addMessage("Darius AI", "Thinking…")
+
+        thread {
+            try {
+                val connection = URL(BACKEND_URL).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 60000
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json")
+                val payload = JSONObject().apply {
+                    put("message", message.ifEmpty { "Please analyse the attached file(s)." })
+                    put("workspace", workspace)
+                }.toString()
+                connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+
+                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                val responseText = stream.bufferedReader().use { it.readText() }
+                val json = JSONObject(responseText)
+                val answer = if (connection.responseCode in 200..299) {
+                    json.optString("text", "No response text was returned.")
+                } else {
+                    "I couldn't complete that request: " + json.optString("error", "Server error.")
+                }
+                runOnUiThread {
+                    removeLastMessage()
+                    addMessage("Darius AI", answer)
+                    sending = false
+                }
+                connection.disconnect()
+            } catch (e: Exception) {
+                runOnUiThread {
+                    removeLastMessage()
+                    addMessage("Darius AI", "Connection error. Please check your internet connection and try again.")
+                    sending = false
+                }
+            }
+        }
     }
 
     private fun startNewChat() {
+        if (sending) {
+            Toast.makeText(this, "Please wait for the current response.", Toast.LENGTH_SHORT).show()
+            return
+        }
         chat.removeAllViews()
         attachedFiles.clear()
         addMessage("Darius AI", "New chat started. What would you like to work on?")
         addQuickActions()
         input.requestFocus()
+    }
+
+    private fun removeLastMessage() {
+        if (chat.childCount > 0) chat.removeViewAt(chat.childCount - 1)
     }
 
     private fun addMessage(sender: String, message: String) {
