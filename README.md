@@ -1,3 +1,3 @@
-# Darius AI V3
+Darius AI 
 
 Android mobile assistant project.
