@@ -19,7 +19,8 @@ class MainActivity : Activity() {
     private var workspace = "General"
     private val attachedFiles = mutableListOf<String>()
 
-    private val blue = Color.rgb(21, 101, 192)
+    private val blue = Color.rgb(36, 99, 235)
+    private val navy = Color.rgb(18, 31, 53)
     private val lightBlue = Color.rgb(232, 240, 254)
     private val textDark = Color.rgb(32, 40, 50)
 
@@ -40,27 +41,27 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(18, 18, 12, 18)
-            setBackgroundColor(blue)
+            setBackgroundColor(navy)
         }
 
         header.addView(TextView(this).apply {
-            text = "Darius AI"
-            textSize = 22f
+            text = "DARIUS AI"
+            textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
         }, LinearLayout.LayoutParams(0, -2, 1f))
 
         header.addView(Button(this).apply {
-            text = "New"
+            text = "＋  New"
             textSize = 12f
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.TRANSPARENT)
+            background = rounded(Color.argb(45, 255, 255, 255), 22f)
             setOnClickListener { startNewChat() }
         })
         root.addView(header)
 
         val workspaceLabel = TextView(this).apply {
-            text = "Workspace: General"
+            text = "  GENERAL"
             tag = "workspaceLabel"
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
@@ -80,7 +81,7 @@ class MainActivity : Activity() {
                 textSize = 12f
                 setOnClickListener {
                     workspace = name
-                    workspaceLabel.text = "Workspace: $name"
+                    workspaceLabel.text = "  " + name.uppercase(Locale.getDefault())
                     addMessage("Darius AI", "$name workspace selected. How can I help?")
                 }
             }, LinearLayout.LayoutParams(-2, -2).apply { setMargins(3, 0, 3, 0) })
@@ -106,7 +107,7 @@ class MainActivity : Activity() {
         }
 
         input = EditText(this).apply {
-            hint = "Ask Darius AI…"
+            hint = "Message Darius AI…"
             textSize = 16f
             maxLines = 4
             imeOptions = EditorInfo.IME_ACTION_SEND
@@ -135,8 +136,8 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(52, -2))
 
         composer.addView(Button(this).apply {
-            text = "Send"
-            textSize = 13f
+            text = "➤"
+            textSize = 21f
             setTextColor(Color.WHITE)
             setBackgroundColor(blue)
             setOnClickListener { sendMessage() }
@@ -219,9 +220,13 @@ class MainActivity : Activity() {
 
     private fun sendMessage() {
         val message = input.text.toString().trim()
-        if (message.isEmpty() && attachedFiles.isEmpty())
-        addMessage("You", message)
-        addMessage("Darius AI", "I received your request in the $workspace workspace. The next backend connection will let me generate the full response here.")
+        if (message.isEmpty() && attachedFiles.isEmpty()) {
+            Toast.makeText(this, "Type a message or attach a file.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val userText = if (message.isEmpty()) "Please analyse the attached file(s)." else message
+        addMessage("You", userText)
+        addMessage("Darius AI", "Request received in the " + workspace + " workspace. The secure AI backend will generate the full response here.")
         input.text.clear()
     }
 
